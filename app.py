@@ -1,5 +1,8 @@
-import os
+﻿import os
 from datetime import date
+import html
+import json
+from urllib.parse import quote_plus
 
 import streamlit as st
 from google import genai
@@ -7,18 +10,12 @@ from milestones import format_milestones_for_prompt, get_relevant_cdc_milestones
 
 
 # --- 1. BRANDING & PAGE CONFIG ---
-st.set_page_config(page_title="Nurture", page_icon="🧩", layout="centered")
+st.set_page_config(page_title="Nurture", page_icon="🧩", layout="wide")
 
 
 # --- 2. SECURE KEY & ID FETCH ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 AMAZON_ID = os.environ.get("AMAZON_ID")
-
-if not GEMINI_API_KEY:
-    try:
-        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        GEMINI_API_KEY = None
 
 if not AMAZON_ID:
     try:
@@ -29,15 +26,14 @@ if not AMAZON_ID:
 
 # --- 3. INITIALIZE THE AI AGENT ---
 client = None
-if GEMINI_API_KEY:
+if GOOGLE_API_KEY:
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=GOOGLE_API_KEY)
     except Exception as init_e:
         st.error(f"Failed to initialize AI Client: {init_e}")
 else:
     st.error(
-        "🔑 Error: GEMINI_API_KEY not found. Add it to your Railway environment variables "
-        "or use `.streamlit/secrets.toml` for local testing."
+        "🔑 Error: GOOGLE_API_KEY not found. Add it to your Railway environment variables."
     )
 
 
@@ -131,6 +127,63 @@ def render_safe_materials_guide():
     )
 
 
+def extract_json_payload(response_text):
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.find("\n")
+        last_fence = cleaned.rfind("```")
+        if first_newline != -1 and last_fence > first_newline:
+            cleaned = cleaned[first_newline:last_fence].strip()
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("Gemini did not return a JSON object.")
+
+    return json.loads(cleaned[start : end + 1])
+
+
+def build_amazon_search_url(search_query):
+    return f"https://www.amazon.com/s?k={quote_plus(search_query)}&tag={quote_plus(AMAZON_ID)}"
+
+
+def render_marketplace_cards(recommendations):
+    columns = st.columns(3)
+
+    for index, column in enumerate(columns):
+        if index >= len(recommendations):
+            column.empty()
+            continue
+
+        recommendation = recommendations[index]
+        title = html.escape(str(recommendation.get("title", "Developmental Gift")))
+        brand = html.escape(str(recommendation.get("brand", "Curated pick")))
+        milestone = html.escape(str(recommendation.get("cdc_milestone", "CDC milestone")))
+        why_it_matters = html.escape(str(recommendation.get("why_it_matters", "")))
+        search_query = str(recommendation.get("search_query") or recommendation.get("title") or title)
+        amazon_url = html.escape(build_amazon_search_url(search_query), quote=True)
+        badge = '<span class="top-pick-badge">TOP PICK</span>' if index == 0 else ""
+
+        column.markdown(
+            f"""
+            <div class="product-recommendation-card">
+                {badge}
+                <div class="card-brand">{brand}</div>
+                <h3>{title}</h3>
+                <div class="why-it-matters">
+                    <strong>Why it Matters</strong>
+                    <p>{why_it_matters}</p>
+                    <p><strong>CDC milestone:</strong> {milestone}</p>
+                </div>
+                <a class="marketplace-button" href="{amazon_url}" target="_blank" rel="noopener noreferrer">
+                    View on Amazon
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 NURTURE_THEME_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@600;700&display=swap');
@@ -169,15 +222,23 @@ NURTURE_THEME_CSS = """
 
     .nurture-title {
         margin: 0 0 0.2rem;
-        font-size: 3rem;
+        font-size: 3.35rem;
         line-height: 1.05;
         font-weight: 700;
+        text-align: center;
     }
 
     .section-kicker {
         margin-bottom: 1.5rem;
         color: #4b6268;
         font-size: 1.02rem;
+        text-align: center;
+    }
+
+    .hero-header {
+        margin: 0 auto 2rem;
+        max-width: 54rem;
+        text-align: center;
     }
 
     .stButton > button {
@@ -204,31 +265,82 @@ NURTURE_THEME_CSS = """
     }
 
     .product-recommendation-card {
+        min-height: 25rem;
         margin: 1rem 0;
-        padding: 1.15rem 1.25rem;
-        background: rgba(255, 255, 255, 0.62);
+        padding: 1.35rem;
+        background: #ffffff;
         border: 2px solid #87CEEB;
-        border-radius: 8px;
-        box-shadow: 0 18px 42px rgba(70, 97, 88, 0.14);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        transition: transform 180ms ease, box-shadow 180ms ease;
     }
 
     .product-recommendation-card:hover {
-        transform: translateY(-4px);
-        border-color: #64bfdf;
-        box-shadow: 0 24px 54px rgba(70, 97, 88, 0.2);
+        transform: translateY(-5px);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.1);
     }
 
     .product-recommendation-card h3 {
-        margin-top: 0;
+        min-height: 3.2rem;
+        margin: 0.7rem 0 0.65rem;
         color: #87CEEB;
+        font-family: 'Quicksand', sans-serif;
+        font-size: 1.28rem;
+        line-height: 1.25;
     }
 
     .product-recommendation-card a {
         color: #F497AD;
         font-weight: 700;
+    }
+
+    .top-pick-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.28rem 0.72rem;
+        background: #F497AD;
+        color: #ffffff;
+        font-family: 'Quicksand', sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+    }
+
+    .card-brand {
+        color: #64747a;
+        font-size: 0.88rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .why-it-matters {
+        margin-top: 1rem;
+        padding-top: 0.9rem;
+        border-top: 1px solid rgba(135, 206, 235, 0.38);
+    }
+
+    .why-it-matters strong {
+        color: #244a54;
+    }
+
+    .marketplace-button {
+        display: inline-flex;
+        justify-content: center;
+        width: 100%;
+        margin-top: 1.1rem;
+        border-radius: 8px;
+        padding: 0.72rem 1rem;
+        background: #F497AD;
+        color: #ffffff !important;
+        font-family: 'Quicksand', sans-serif;
+        font-weight: 700;
+        text-decoration: none !important;
+        box-shadow: 0 10px 24px rgba(244, 151, 173, 0.26);
+    }
+
+    .marketplace-button:hover {
+        background: #ef819d;
     }
 </style>
 """
@@ -236,8 +348,15 @@ NURTURE_THEME_CSS = """
 
 # --- 4. USER INTERFACE (UI) ---
 st.markdown(NURTURE_THEME_CSS, unsafe_allow_html=True)
-st.markdown('<h1 class="nurture-title"><strong>🧩 Nurture</strong></h1>', unsafe_allow_html=True)
-st.markdown('<p class="section-kicker">Your personal developmental gift scout.</p>', unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="hero-header">
+        <h1 class="nurture-title"><strong>Nurture</strong></h1>
+        <p class="section-kicker">Your personal developmental gift scout.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     render_safe_materials_guide()
@@ -255,8 +374,7 @@ st.caption("CDC-informed gift ideas for the next developmental step.")
 if st.button("Analyze Milestones & Find Gifts"):
     if not client:
         st.warning(
-            "Agent brain is offline. Set GEMINI_API_KEY in Railway environment variables "
-            "or `.streamlit/secrets.toml` for local testing."
+            "Agent brain is offline. Set GOOGLE_API_KEY in Railway environment variables."
         )
     else:
         milestone_context = format_milestones_for_prompt(months)
@@ -274,29 +392,39 @@ if st.button("Analyze Milestones & Find Gifts"):
         Required CDC milestone phrases: In your first section, mention each of these exact phrases:
         {required_milestones}
 
-        1. List 2-3 specific developmental milestones relevant for a {months}-month-old, using the CDC context above.
-        2. Suggest 3 'Stepping Stone' gifts that help them reach the NEXT CDC milestone.
-        3. Focus on high-quality, non-toxic, or wooden brands.
-        4. Provide Amazon search links with tag={AMAZON_ID}.
-        5. Format each of the 3 product recommendations as its own HTML card:
-           <div class="product-recommendation-card">...</div>
-        6. Inside each product card, include a "Why it Matters" section that explicitly names one
-           CDC milestone from the context above and explains how the toy supports that milestone.
+        Return only valid JSON. Do not wrap it in markdown.
+        Use this exact shape:
+        {{
+          "milestones": ["CDC milestone phrase", "CDC milestone phrase"],
+          "recommendations": [
+            {{
+              "title": "Product search title",
+              "brand": "Brand or material category",
+              "cdc_milestone": "Exact CDC milestone phrase from the context",
+              "why_it_matters": "One concise sentence linking the toy to that CDC milestone.",
+              "search_query": "Amazon search query"
+            }}
+          ]
+        }}
+
+        Requirements:
+        - Return exactly 3 recommendations.
+        - Focus on high-quality, non-toxic, wooden, organic, or food-grade silicone items.
+        - Each recommendation must explicitly connect to one CDC milestone in "why_it_matters".
+        - Use brands such as Lovevery, Hape, PlanToys, Melissa & Doug, or comparable clean-material brands.
         """
 
         with st.spinner("Nurture is analyzing developmental data..."):
             last_error = None
-            for model in ("gemini-2.5-flash", "gemini-2.0-flash"):
-                try:
-                    response = client.models.generate_content(
-                        model=model,
-                        contents=prompt_text,
-                    )
-                    st.markdown(response.text, unsafe_allow_html=True)
-                    break
-                except Exception as model_error:
-                    last_error = model_error
-            else:
+            try:
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=prompt_text,
+                )
+                payload = extract_json_payload(response.text or "")
+                render_marketplace_cards(payload.get("recommendations", []))
+            except Exception as model_error:
+                last_error = model_error
                 st.error(f"Agent Error: {last_error}")
 
 st.divider()
