@@ -110,20 +110,15 @@ def render_nurture_milestones(age_months, container):
             container.checkbox(milestone, key=key)
 
 
-def render_safe_materials_guide():
-    st.sidebar.header("Safe Materials Guide")
-    st.sidebar.markdown(
+def render_safety_guide_bar():
+    st.markdown(
         """
-        We prioritize toys made with **wood, organic cotton, food-grade silicone, and water-based finishes** because toddlers explore with their hands and mouths.
-
-        Wooden and organic materials are easier to evaluate, tend to last longer, and support open-ended play without noisy electronics or brittle plastic parts.
-
-        Every recommendation should favor:
-        - Non-toxic finishes
-        - Durable, repairable construction
-        - Simple sensory feedback
-        - Brands with clear material transparency
-        """
+        <div class="safety-guide-bar">
+            <strong>Safe Materials Guide</strong>
+            <span>We prioritize wood, organic cotton, food-grade silicone, and water-based finishes because toddlers explore with their hands and mouths. Recommendations favor non-toxic finishes, durable construction, simple sensory feedback, and transparent brands.</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -175,9 +170,11 @@ def render_marketplace_cards(recommendations):
                     <p>{why_it_matters}</p>
                     <p><strong>CDC milestone:</strong> {milestone}</p>
                 </div>
-                <a class="marketplace-button" href="{amazon_url}" target="_blank" rel="noopener noreferrer">
-                    View on Amazon
-                </a>
+                <div class="marketplace-button-row">
+                    <a class="marketplace-button" href="{amazon_url}" target="_blank" rel="noopener noreferrer">
+                        View on Amazon
+                    </a>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -197,18 +194,21 @@ NURTURE_THEME_CSS = """
     }
 
     .stApp {
-        background:
-            radial-gradient(circle at top left, rgba(135, 206, 235, 0.24), transparent 34rem),
-            radial-gradient(circle at bottom right, rgba(244, 151, 173, 0.2), transparent 32rem),
-            linear-gradient(135deg, #f8fbfa 0%, #eef8fb 45%, #fff6f8 100%);
+        background: #F8F9FA;
+        color: #2C3E50;
     }
 
     .stApp,
     .stMarkdown,
     [data-testid="stWidgetLabel"],
     [data-testid="stMetricLabel"],
-    [data-testid="stMetricValue"] {
+    [data-testid="stMetricValue"],
+    p,
+    li,
+    span,
+    label {
         font-family: 'Inter', sans-serif;
+        color: #2C3E50;
     }
 
     h1,
@@ -222,7 +222,7 @@ NURTURE_THEME_CSS = """
 
     .nurture-title {
         margin: 0 0 0.2rem;
-        font-size: 3.35rem;
+        font-size: 3.45rem;
         line-height: 1.05;
         font-weight: 700;
         text-align: center;
@@ -230,7 +230,7 @@ NURTURE_THEME_CSS = """
 
     .section-kicker {
         margin-bottom: 1.5rem;
-        color: #4b6268;
+        color: #2C3E50;
         font-size: 1.02rem;
         text-align: center;
     }
@@ -239,6 +239,20 @@ NURTURE_THEME_CSS = """
         margin: 0 auto 2rem;
         max-width: 54rem;
         text-align: center;
+    }
+
+    .logo-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 3.2rem;
+        height: 3.2rem;
+        margin-bottom: 0.45rem;
+        border-radius: 50%;
+        background: #FFFFFF;
+        color: #87CEEB;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        font-size: 1.75rem;
     }
 
     .stButton > button {
@@ -265,13 +279,14 @@ NURTURE_THEME_CSS = """
     }
 
     .product-recommendation-card {
+        position: relative;
         min-height: 25rem;
         margin: 1rem 0;
-        padding: 1.35rem;
-        background: #ffffff;
-        border: 2px solid #87CEEB;
-        border-radius: 16px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        padding: 20px;
+        background-color: #FFFFFF;
+        border: 1px solid #E0E0E0;
+        border-radius: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
         transition: transform 180ms ease, box-shadow 180ms ease;
     }
 
@@ -282,7 +297,7 @@ NURTURE_THEME_CSS = """
 
     .product-recommendation-card h3 {
         min-height: 3.2rem;
-        margin: 0.7rem 0 0.65rem;
+        margin: 2rem 0 0.65rem;
         color: #87CEEB;
         font-family: 'Quicksand', sans-serif;
         font-size: 1.28rem;
@@ -295,10 +310,12 @@ NURTURE_THEME_CSS = """
     }
 
     .top-pick-badge {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 0.28rem 0.72rem;
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        display: inline-block;
+        border-radius: 4px;
+        padding: 0.26rem 0.62rem;
         background: #F497AD;
         color: #ffffff;
         font-family: 'Quicksand', sans-serif;
@@ -327,9 +344,10 @@ NURTURE_THEME_CSS = """
     .marketplace-button {
         display: inline-flex;
         justify-content: center;
-        width: 100%;
+        align-items: center;
+        min-width: 11rem;
         margin-top: 1.1rem;
-        border-radius: 8px;
+        border-radius: 999px;
         padding: 0.72rem 1rem;
         background: #F497AD;
         color: #ffffff !important;
@@ -342,6 +360,29 @@ NURTURE_THEME_CSS = """
     .marketplace-button:hover {
         background: #ef819d;
     }
+
+    .marketplace-button-row {
+        text-align: center;
+    }
+
+    .safety-guide-bar {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-top: 2rem;
+        padding: 1rem 1.2rem;
+        border: 1px solid #E0E0E0;
+        border-radius: 20px;
+        background-color: #FFFFFF;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        color: #2C3E50;
+    }
+
+    .safety-guide-bar strong {
+        flex: 0 0 auto;
+        color: #87CEEB;
+        font-family: 'Quicksand', sans-serif;
+    }
 </style>
 """
 
@@ -351,15 +392,13 @@ st.markdown(NURTURE_THEME_CSS, unsafe_allow_html=True)
 st.markdown(
     """
     <div class="hero-header">
+        <div class="logo-mark">🧩</div>
         <h1 class="nurture-title"><strong>Nurture</strong></h1>
         <p class="section-kicker">Your personal developmental gift scout.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
-
-with st.sidebar:
-    render_safe_materials_guide()
 
 if "child_birth_date" not in st.session_state:
     st.session_state.child_birth_date = date(2024, 11, 1)
@@ -450,4 +489,5 @@ st.header("Developmental Progress")
 checked_count, total_count = get_nurture_progress()
 st.progress(checked_count / total_count if total_count else 0)
 st.caption(f"{checked_count} of {total_count} milestones seen today")
+render_safety_guide_bar()
 st.caption("Nurture | Building foundations through play.")
