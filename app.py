@@ -1,40 +1,21 @@
-﻿import os
-from datetime import date
 import html
 import json
+import os
+from calendar import monthrange
+from datetime import date
 from urllib.parse import quote_plus
 
-import streamlit as st
-from google import genai
+from flask import Flask, render_template_string, request
+from openai import OpenAI
+
 from milestones import format_milestones_for_prompt, get_relevant_cdc_milestones
 
 
-# --- 1. BRANDING & PAGE CONFIG ---
-st.set_page_config(page_title="Nurture", page_icon="🧩", layout="wide")
+app = Flask(__name__)
 
-
-# --- 2. SECURE KEY & ID FETCH ---
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-AMAZON_ID = os.environ.get("AMAZON_ID")
-
-if not AMAZON_ID:
-    try:
-        AMAZON_ID = st.secrets["AMAZON_ID"]
-    except Exception:
-        AMAZON_ID = "steppingstone-20"
-
-
-# --- 3. INITIALIZE THE AI AGENT ---
-client = None
-if GOOGLE_API_KEY:
-    try:
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-    except Exception as init_e:
-        st.error(f"Failed to initialize AI Client: {init_e}")
-else:
-    st.error(
-        "🔑 Error: GOOGLE_API_KEY not found. Add it to your Railway environment variables."
-    )
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+AMAZON_ID = os.environ.get("AMAZON_ID", "steppingstone-20")
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 
 NURTURE_WEEKLY_MILESTONES = {
@@ -65,6 +46,22 @@ def calculate_months(birth_date):
     return (today.year - birth_date.year) * 12 + today.month - birth_date.month
 
 
+def default_birth_date_for_age(age_months=17):
+    today = date.today()
+    total_months = (today.year * 12 + today.month - 1) - age_months
+    year = total_months // 12
+    month = total_months % 12 + 1
+    day = min(today.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def parse_birth_date(raw_birth_date):
+    try:
+        return date.fromisoformat(raw_birth_date)
+    except (TypeError, ValueError):
+        return default_birth_date_for_age()
+
+
 def build_required_milestone_context(age_months):
     milestone_match = get_relevant_cdc_milestones(age_months)
     if not milestone_match:
@@ -86,40 +83,9 @@ def build_required_milestone_context(age_months):
     return "\n".join(f"- {milestone}" for milestone in required_phrases)
 
 
-def get_nurture_progress():
-    checked_count = 0
+def get_nurture_progress(seen_milestones):
     total_count = sum(len(milestones) for milestones in NURTURE_WEEKLY_MILESTONES.values())
-
-    for category, milestones in NURTURE_WEEKLY_MILESTONES.items():
-        for milestone in milestones:
-            key = f"nurture_{category}_{milestone}"
-            if st.session_state.get(key):
-                checked_count += 1
-
-    return checked_count, total_count
-
-
-def render_nurture_milestones(age_months, container):
-    container.header("Nurture Milestones")
-    container.caption(f"Weekly growth tracker for {age_months} months")
-
-    for category, milestones in NURTURE_WEEKLY_MILESTONES.items():
-        container.subheader(category)
-        for milestone in milestones:
-            key = f"nurture_{category}_{milestone}"
-            container.checkbox(milestone, key=key)
-
-
-def render_safety_guide_bar():
-    st.markdown(
-        """
-        <div class="safety-guide-bar">
-            <strong>Safe Materials Guide</strong>
-            <span>We prioritize wood, organic cotton, food-grade silicone, and water-based finishes because toddlers explore with their hands and mouths. Recommendations favor non-toxic finishes, durable construction, simple sensory feedback, and transparent brands.</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    return len(seen_milestones), total_count
 
 
 def extract_json_payload(response_text):
@@ -133,7 +99,7 @@ def extract_json_payload(response_text):
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start == -1 or end == -1 or end <= start:
-        raise ValueError("Gemini did not return a JSON object.")
+        raise ValueError("OpenAI did not return a JSON object.")
 
     return json.loads(cleaned[start : end + 1])
 
@@ -142,26 +108,41 @@ def build_amazon_search_url(search_query):
     return f"https://www.amazon.com/s?k={quote_plus(search_query)}&tag={quote_plus(AMAZON_ID)}"
 
 
-def render_marketplace_cards(recommendations):
-    columns = st.columns(3)
+def normalize_recommendation(recommendation):
+    title = recommendation.get("title") or recommendation.get("name") or "Developmental Gift"
+    brand = recommendation.get("brand") or "Clean-swap pick"
+    milestone = recommendation.get("cdc_milestone") or recommendation.get("milestone_logic") or "CDC milestone"
+    why_it_matters = recommendation.get("why_it_matters") or recommendation.get("description") or ""
+    search_query = (
+        recommendation.get("search_query")
+        or recommendation.get("amazon_search_term")
+        or title
+    )
 
-    for index, column in enumerate(columns):
-        if index >= len(recommendations):
-            column.empty()
-            continue
+    return {
+        "title": str(title),
+        "brand": str(brand),
+        "cdc_milestone": str(milestone),
+        "why_it_matters": str(why_it_matters),
+        "search_query": str(search_query),
+    }
 
-        recommendation = recommendations[index]
-        title = html.escape(str(recommendation.get("title", "Developmental Gift")))
-        brand = html.escape(str(recommendation.get("brand", "Curated pick")))
-        milestone = html.escape(str(recommendation.get("cdc_milestone", "CDC milestone")))
-        why_it_matters = html.escape(str(recommendation.get("why_it_matters", "")))
-        search_query = str(recommendation.get("search_query") or recommendation.get("title") or title)
-        amazon_url = html.escape(build_amazon_search_url(search_query), quote=True)
+
+def render_recommendations_grid(recommendations):
+    normalized_recommendations = [normalize_recommendation(item) for item in recommendations[:3]]
+    cards = []
+
+    for index, recommendation in enumerate(normalized_recommendations):
+        title = html.escape(recommendation["title"])
+        brand = html.escape(recommendation["brand"])
+        milestone = html.escape(recommendation["cdc_milestone"])
+        why_it_matters = html.escape(recommendation["why_it_matters"])
+        amazon_url = html.escape(build_amazon_search_url(recommendation["search_query"]), quote=True)
         badge = '<span class="top-pick-badge">TOP PICK</span>' if index == 0 else ""
 
-        column.markdown(
+        cards.append(
             f"""
-            <div class="product-recommendation-card">
+            <article class="product-recommendation-card">
                 {badge}
                 <div class="card-brand">{brand}</div>
                 <h3>{title}</h3>
@@ -175,319 +156,466 @@ def render_marketplace_cards(recommendations):
                         View on Amazon
                     </a>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+            </article>
+            """
         )
 
+    while len(cards) < 3:
+        cards.append('<article class="product-recommendation-card placeholder-card"></article>')
 
-NURTURE_THEME_CSS = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@600;700&display=swap');
+    return "\n".join(cards)
 
-    #MainMenu,
-    footer,
-    [data-testid="stToolbar"],
-    .stDeployButton {
-        visibility: hidden;
-        height: 0;
-    }
 
-    .stApp {
-        background: #F8F9FA;
-        color: #2C3E50;
-    }
+def get_nurture_recommendations(user_input, child_age):
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY is missing. Add it to your Railway environment variables.")
 
-    .stApp,
-    .stMarkdown,
-    [data-testid="stWidgetLabel"],
-    [data-testid="stMetricLabel"],
-    [data-testid="stMetricValue"],
-    p,
-    li,
-    span,
-    label {
-        font-family: 'Inter', sans-serif;
-        color: #2C3E50;
-    }
+    milestone_context = format_milestones_for_prompt(child_age)
+    required_milestones = build_required_milestone_context(child_age)
+    system_prompt = f"""
+    You are Nurture, an expert child development scout.
+    The child is {child_age} months old.
 
-    h1,
-    h2,
-    h3,
-    .nurture-title {
-        font-family: 'Quicksand', sans-serif !important;
-        color: #87CEEB !important;
-        letter-spacing: 0;
-    }
+    Use this CDC milestone context as the source of truth:
+    {milestone_context}
 
-    .nurture-title {
-        margin: 0 0 0.2rem;
-        font-size: 3.45rem;
-        line-height: 1.05;
-        font-weight: 700;
-        text-align: center;
-    }
+    Required CDC milestone phrases to consider:
+    {required_milestones}
 
-    .section-kicker {
-        margin-bottom: 1.5rem;
-        color: #2C3E50;
-        font-size: 1.02rem;
-        text-align: center;
-    }
+    Suggest exactly 3 clean-swap toys: non-toxic, wooden, organic, or food-grade silicone.
+    Return a valid JSON object with this exact shape:
+    {{
+      "recommendations": [
+        {{
+          "name": "Product search title",
+          "description": "Short product description",
+          "milestone_logic": "Explicitly name a CDC milestone from the context and explain why this toy supports it.",
+          "amazon_search_term": "Amazon search query"
+        }}
+      ]
+    }}
+    """
 
-    .hero-header {
-        margin: 0 auto 2rem;
-        max-width: 54rem;
-        text-align: center;
-    }
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input},
+        ],
+        response_format={"type": "json_object"},
+    )
+    payload = extract_json_payload(response.choices[0].message.content or "")
+    return payload.get("recommendations", [])
 
-    .logo-mark {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 3.2rem;
-        height: 3.2rem;
-        margin-bottom: 0.45rem;
-        border-radius: 50%;
-        background: #FFFFFF;
-        color: #87CEEB;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        font-size: 1.75rem;
-    }
 
-    .stButton > button {
-        width: 100%;
-        border: 0;
-        border-radius: 8px;
-        background: #F497AD;
-        color: #ffffff;
-        font-family: 'Quicksand', sans-serif;
-        font-weight: 700;
-        box-shadow: 0 12px 28px rgba(244, 151, 173, 0.28);
-        transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
-    }
+def render_milestone_checkboxes(seen_milestones):
+    sections = []
+    for category, milestones in NURTURE_WEEKLY_MILESTONES.items():
+        items = []
+        for milestone in milestones:
+            checked = "checked" if milestone in seen_milestones else ""
+            escaped_milestone = html.escape(milestone)
+            items.append(
+                f"""
+                <label class="milestone-check">
+                    <input type="checkbox" name="seen_milestones" value="{escaped_milestone}" {checked}>
+                    <span>{escaped_milestone}</span>
+                </label>
+                """
+            )
+        sections.append(
+            f"""
+            <section class="milestone-group">
+                <h3>{html.escape(category)}</h3>
+                {''.join(items)}
+            </section>
+            """
+        )
+    return "\n".join(sections)
 
-    .stButton > button:hover {
-        background: #ef819d;
-        color: #ffffff;
-        transform: translateY(-2px);
-        box-shadow: 0 16px 34px rgba(244, 151, 173, 0.34);
-    }
 
-    .stProgress > div > div > div > div {
-        background-color: #F497AD;
-    }
+PAGE_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nurture</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --sky-blue: #87CEEB;
+            --rose-pink: #F497AD;
+            --charcoal: #2C3E50;
+            --background: #F8F9FA;
+            --line: #E0E0E0;
+            --white: #FFFFFF;
+        }
 
-    .product-recommendation-card {
-        position: relative;
-        min-height: 25rem;
-        margin: 1rem 0;
-        padding: 20px;
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        border-radius: 20px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        transition: transform 180ms ease, box-shadow 180ms ease;
-    }
+        * {
+            box-sizing: border-box;
+        }
 
-    .product-recommendation-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 14px 30px rgba(0,0,0,0.1);
-    }
+        body {
+            margin: 0;
+            background: var(--background);
+            color: var(--charcoal);
+            font-family: 'Inter', sans-serif;
+        }
 
-    .product-recommendation-card h3 {
-        min-height: 3.2rem;
-        margin: 2rem 0 0.65rem;
-        color: #87CEEB;
-        font-family: 'Quicksand', sans-serif;
-        font-size: 1.28rem;
-        line-height: 1.25;
-    }
+        main {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 40px 0 28px;
+        }
 
-    .product-recommendation-card a {
-        color: #F497AD;
-        font-weight: 700;
-    }
+        h1,
+        h2,
+        h3 {
+            color: var(--sky-blue);
+            font-family: 'Quicksand', sans-serif;
+            letter-spacing: 0;
+        }
 
-    .top-pick-badge {
-        position: absolute;
-        top: 14px;
-        right: 14px;
-        display: inline-block;
-        border-radius: 4px;
-        padding: 0.26rem 0.62rem;
-        background: #F497AD;
-        color: #ffffff;
-        font-family: 'Quicksand', sans-serif;
-        font-size: 0.74rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-    }
+        .hero-header {
+            margin: 0 auto 32px;
+            text-align: center;
+        }
 
-    .card-brand {
-        color: #64747a;
-        font-size: 0.88rem;
-        font-weight: 700;
-        text-transform: uppercase;
-    }
+        .logo-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--white);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            font-size: 28px;
+        }
 
-    .why-it-matters {
-        margin-top: 1rem;
-        padding-top: 0.9rem;
-        border-top: 1px solid rgba(135, 206, 235, 0.38);
-    }
+        .nurture-title {
+            margin: 8px 0 4px;
+            font-size: clamp(44px, 6vw, 64px);
+            line-height: 1;
+        }
 
-    .why-it-matters strong {
-        color: #244a54;
-    }
+        .section-kicker,
+        .muted {
+            color: var(--charcoal);
+        }
 
-    .marketplace-button {
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
-        min-width: 11rem;
-        margin-top: 1.1rem;
-        border-radius: 999px;
-        padding: 0.72rem 1rem;
-        background: #F497AD;
-        color: #ffffff !important;
-        font-family: 'Quicksand', sans-serif;
-        font-weight: 700;
-        text-decoration: none !important;
-        box-shadow: 0 10px 24px rgba(244, 151, 173, 0.26);
-    }
+        .search-panel,
+        .profile-panel,
+        .safety-guide-bar {
+            background: var(--white);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            padding: 20px;
+        }
 
-    .marketplace-button:hover {
-        background: #ef819d;
-    }
+        .search-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 180px auto;
+            gap: 12px;
+            align-items: end;
+        }
 
-    .marketplace-button-row {
-        text-align: center;
-    }
+        label {
+            display: grid;
+            gap: 6px;
+            color: var(--charcoal);
+            font-weight: 700;
+        }
 
-    .safety-guide-bar {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-        margin-top: 2rem;
-        padding: 1rem 1.2rem;
-        border: 1px solid #E0E0E0;
-        border-radius: 20px;
-        background-color: #FFFFFF;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        color: #2C3E50;
-    }
+        input[type="text"],
+        input[type="date"] {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 13px 16px;
+            color: var(--charcoal);
+            background: var(--white);
+            font: inherit;
+        }
 
-    .safety-guide-bar strong {
-        flex: 0 0 auto;
-        color: #87CEEB;
-        font-family: 'Quicksand', sans-serif;
-    }
-</style>
+        button,
+        .marketplace-button {
+            border: 0;
+            border-radius: 999px;
+            padding: 13px 22px;
+            background: var(--rose-pink);
+            color: #FFFFFF;
+            cursor: pointer;
+            font-family: 'Quicksand', sans-serif;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 10px 24px rgba(244, 151, 173, 0.26);
+        }
+
+        .recommendation-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 20px;
+            margin: 18px 0 34px;
+        }
+
+        .product-recommendation-card {
+            position: relative;
+            min-height: 25rem;
+            padding: 20px;
+            background-color: #FFFFFF;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            border: 1px solid #E0E0E0;
+            transition: transform 180ms ease, box-shadow 180ms ease;
+        }
+
+        .product-recommendation-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 14px 30px rgba(0,0,0,0.1);
+        }
+
+        .product-recommendation-card h3 {
+            margin: 34px 0 10px;
+            font-size: 22px;
+            line-height: 1.2;
+        }
+
+        .top-pick-badge {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            display: inline-block;
+            border-radius: 4px;
+            padding: 5px 10px;
+            background: var(--rose-pink);
+            color: #FFFFFF;
+            font-family: 'Quicksand', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .card-brand {
+            color: #64747a;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .why-it-matters {
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(135, 206, 235, 0.38);
+        }
+
+        .marketplace-button-row {
+            margin-top: 18px;
+            text-align: center;
+        }
+
+        .profile-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 20px;
+            margin: 18px 0 34px;
+        }
+
+        .age-metric {
+            display: grid;
+            place-items: center;
+            min-height: 118px;
+            border-radius: 16px;
+            background: #F8F9FA;
+            border: 1px solid var(--line);
+        }
+
+        .age-metric strong {
+            color: var(--sky-blue);
+            font-family: 'Quicksand', sans-serif;
+            font-size: 40px;
+        }
+
+        .milestone-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .milestone-group {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 14px;
+        }
+
+        .milestone-group h3 {
+            margin: 0 0 10px;
+            font-size: 18px;
+        }
+
+        .milestone-check {
+            display: flex;
+            align-items: flex-start;
+            gap: 9px;
+            margin: 9px 0;
+            font-weight: 500;
+        }
+
+        .progress-track {
+            height: 14px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #E9ECEF;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: {{ progress_percent }}%;
+            background: var(--rose-pink);
+        }
+
+        .safety-guide-bar {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-top: 28px;
+        }
+
+        .safety-guide-bar strong {
+            flex: 0 0 auto;
+            color: var(--sky-blue);
+            font-family: 'Quicksand', sans-serif;
+        }
+
+        .error {
+            margin-top: 14px;
+            border-radius: 16px;
+            padding: 14px 16px;
+            background: #FFF1F4;
+            color: var(--charcoal);
+            border: 1px solid #F7C5D0;
+        }
+
+        @media (max-width: 860px) {
+            .search-row,
+            .recommendation-grid,
+            .profile-grid,
+            .milestone-grid,
+            .safety-guide-bar {
+                grid-template-columns: 1fr;
+            }
+
+            .safety-guide-bar {
+                display: grid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header class="hero-header">
+            <div class="logo-mark">N</div>
+            <h1 class="nurture-title">Nurture</h1>
+            <p class="section-kicker">Your personal developmental gift scout.</p>
+        </header>
+
+        <form method="post">
+            <section>
+                <h2>Amazon Gift Recommendations</h2>
+                <p class="muted">Describe the skill, milestone, or gift search you have in mind.</p>
+                <div class="search-panel">
+                    <div class="search-row">
+                        <label>
+                            Search intent
+                            <input type="text" name="user_input" value="{{ user_input }}" placeholder="Find wooden toys for spoon practice">
+                        </label>
+                        <label>
+                            Birth date
+                            <input type="date" name="birth_date" value="{{ birth_date }}">
+                        </label>
+                        <button type="submit">Analyze</button>
+                    </div>
+                </div>
+                {% if error %}
+                    <div class="error">{{ error }}</div>
+                {% endif %}
+                {% if recommendation_cards %}
+                    <div class="recommendation-grid">
+                        {{ recommendation_cards|safe }}
+                    </div>
+                {% endif %}
+            </section>
+
+            <section>
+                <h2>Child Profile & Milestones</h2>
+                <div class="profile-grid">
+                    <div class="age-metric">
+                        <span>Age in months</span>
+                        <strong>{{ months }}m</strong>
+                    </div>
+                    <div class="profile-panel">
+                        <div class="milestone-grid">
+                            {{ milestone_checkboxes|safe }}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>Developmental Progress</h2>
+                <div class="progress-track">
+                    <div class="progress-fill"></div>
+                </div>
+                <p class="muted">{{ checked_count }} of {{ total_count }} milestones seen today</p>
+            </section>
+        </form>
+
+        <section class="safety-guide-bar">
+            <strong>Safe Materials Guide</strong>
+            <span>We prioritize wood, organic cotton, food-grade silicone, and water-based finishes because toddlers explore with their hands and mouths. Recommendations favor non-toxic finishes, durable construction, simple sensory feedback, and transparent brands.</span>
+        </section>
+    </main>
+</body>
+</html>
 """
 
 
-# --- 4. USER INTERFACE (UI) ---
-st.markdown(NURTURE_THEME_CSS, unsafe_allow_html=True)
-st.markdown(
-    """
-    <div class="hero-header">
-        <div class="logo-mark">🧩</div>
-        <h1 class="nurture-title"><strong>Nurture</strong></h1>
-        <p class="section-kicker">Your personal developmental gift scout.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+@app.route("/", methods=["GET", "POST"])
+def index():
+    raw_birth_date = request.form.get("birth_date") or default_birth_date_for_age().isoformat()
+    birth_date = parse_birth_date(raw_birth_date)
+    months = calculate_months(birth_date)
+    user_input = request.form.get("user_input", "")
+    seen_milestones = set(request.form.getlist("seen_milestones"))
+    checked_count, total_count = get_nurture_progress(seen_milestones)
+    progress_percent = round((checked_count / total_count) * 100) if total_count else 0
+    recommendation_cards = ""
+    error = ""
 
-if "child_birth_date" not in st.session_state:
-    st.session_state.child_birth_date = date(2024, 11, 1)
+    if request.method == "POST" and user_input.strip():
+        try:
+            recommendations = get_nurture_recommendations(user_input.strip(), months)
+            recommendation_cards = render_recommendations_grid(recommendations)
+        except Exception as exc:
+            error = str(exc)
 
-months = calculate_months(st.session_state.child_birth_date)
-
-
-# --- 5. AMAZON GIFT RECOMMENDATIONS ---
-st.header("Amazon Gift Recommendations")
-st.caption("CDC-informed gift ideas for the next developmental step.")
-
-if st.button("Analyze Milestones & Find Gifts"):
-    if not client:
-        st.warning(
-            "Agent brain is offline. Set GOOGLE_API_KEY in Railway environment variables."
-        )
-    else:
-        milestone_context = format_milestones_for_prompt(months)
-        required_milestones = build_required_milestone_context(months)
-        prompt_text = f"""
-        You are Nurture, an expert in child development and clean-swap toy curation.
-        The child is {months} months old.
-
-        Use this CDC milestone context as the source of truth. Mention the relevant CDC
-        milestone(s) explicitly before recommending gifts, and do not replace them with invented
-        milestones.
-
-        {milestone_context}
-
-        Required CDC milestone phrases: In your first section, mention each of these exact phrases:
-        {required_milestones}
-
-        Return only valid JSON. Do not wrap it in markdown.
-        Use this exact shape:
-        {{
-          "milestones": ["CDC milestone phrase", "CDC milestone phrase"],
-          "recommendations": [
-            {{
-              "title": "Product search title",
-              "brand": "Brand or material category",
-              "cdc_milestone": "Exact CDC milestone phrase from the context",
-              "why_it_matters": "One concise sentence linking the toy to that CDC milestone.",
-              "search_query": "Amazon search query"
-            }}
-          ]
-        }}
-
-        Requirements:
-        - Return exactly 3 recommendations.
-        - Focus on high-quality, non-toxic, wooden, organic, or food-grade silicone items.
-        - Each recommendation must explicitly connect to one CDC milestone in "why_it_matters".
-        - Use brands such as Lovevery, Hape, PlanToys, Melissa & Doug, or comparable clean-material brands.
-        """
-
-        with st.spinner("Nurture is analyzing developmental data..."):
-            last_error = None
-            try:
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash",
-                    contents=prompt_text,
-                )
-                payload = extract_json_payload(response.text or "")
-                render_marketplace_cards(payload.get("recommendations", []))
-            except Exception as model_error:
-                last_error = model_error
-                st.error(f"Agent Error: {last_error}")
-
-st.divider()
+    return render_template_string(
+        PAGE_TEMPLATE,
+        birth_date=birth_date.isoformat(),
+        checked_count=checked_count,
+        error=error,
+        milestone_checkboxes=render_milestone_checkboxes(seen_milestones),
+        months=months,
+        progress_percent=progress_percent,
+        recommendation_cards=recommendation_cards,
+        total_count=total_count,
+        user_input=user_input,
+    )
 
 
-# --- 6. CHILD PROFILE & MILESTONES ---
-st.header("Child's Profile")
-profile_columns = st.columns([2, 1])
-with profile_columns[0]:
-    st.date_input("Birth Date", key="child_birth_date")
-months = calculate_months(st.session_state.child_birth_date)
-with profile_columns[1]:
-    st.metric(label="Age in Months", value=f"{months}m")
-
-with st.expander("Nurture Milestones", expanded=False):
-    render_nurture_milestones(months, st)
-
-st.divider()
-
-
-# --- 7. DEVELOPMENTAL PROGRESS ---
-st.header("Developmental Progress")
-checked_count, total_count = get_nurture_progress()
-st.progress(checked_count / total_count if total_count else 0)
-st.caption(f"{checked_count} of {total_count} milestones seen today")
-render_safety_guide_bar()
-st.caption("Nurture | Building foundations through play.")
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8080"))
+    app.run(host="0.0.0.0", port=port)
