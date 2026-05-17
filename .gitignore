@@ -2,3 +2,4 @@
 .venv/
 key.txt
 __pycache__/
+flask-preview*.log
