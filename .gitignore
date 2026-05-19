@@ -3,3 +3,5 @@
 key.txt
 __pycache__/
 flask-preview*.log
+nurture_events.jsonl
+nurture_leads.jsonl
