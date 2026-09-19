@@ -1,0 +1,49 @@
+{
+  "viewports": [
+    {
+      "width": 360,
+      "horizontal_overflow": false,
+      "images": "loaded"
+    },
+    {
+      "width": 390,
+      "horizontal_overflow": false,
+      "images": "loaded"
+    },
+    {
+      "width": 768,
+      "horizontal_overflow": false,
+      "images": "loaded"
+    },
+    {
+      "width": 1024,
+      "horizontal_overflow": false,
+      "images": "loaded"
+    },
+    {
+      "width": 1440,
+      "horizontal_overflow": false,
+      "images": "loaded"
+    }
+  ],
+  "checks": [
+    "Combined filters, OR interests, query reload, Back/Forward, chips, all results, detail return, reset",
+    "No-results retains age; all six category actions work; gift shopping has explicit preview notice",
+    "Mobile navigation, skip link, Escape, dialog focus trap, focus return; reduced motion",
+    "Login and signup explicitly unavailable; no credential collection",
+    "Public dashboard returns 401; explicit debug-only fixture preview works; production preview returns 404",
+    "Mobile navigation, discovery submission, and activity details work without JavaScript"
+  ],
+  "expected_http_errors": [
+    "Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)",
+    "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+  ],
+  "console_errors_on_normal_pages": [],
+  "contrast": {
+    "body": 12.0,
+    "muted": 5.45,
+    "button": 9.21,
+    "sage copy": 5.42,
+    "category copy": 6.22
+  }
+}

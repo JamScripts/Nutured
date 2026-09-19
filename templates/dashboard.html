@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% from 'components.html' import activity_card, filter_field %}
+{% block title %}Development preview · Nurtured{% endblock %}
+{% block content %}
+<div class="development-notice" role="status">Development fixture preview · no authenticated account · nothing is saved</div>
+<div class="dashboard-layout">
+  <aside class="dashboard-nav"><h2>Your space</h2><nav aria-label="Account preview navigation"><a href="#welcome">Overview</a><a href="#profile">Preferences</a><a href="#recommendations">Activity ideas</a><a href="/">Return to public site</a></nav></aside>
+  <div>
+    <section id="welcome" class="dashboard-welcome"><span class="eyebrow">LAYOUT PREVIEW</span><h1>A little space for your everyday.</h1><p>This welcome area will use an authenticated account when a provider is connected.</p></section>
+    <section id="profile" class="profile-preview">
+      <h2>Your preferences</h2>
+      <p>No profile is connected. These disabled sample controls show the future optional setup.</p>
+      <fieldset disabled class="profile-fields"><legend>Development setup preview</legend>
+        <div class="filter-field"><label for="nickname">Child’s nickname <span class="muted">(optional)</span></label><input id="nickname" placeholder="A nickname, if you like" maxlength="40"></div>
+        {{ filter_field('profile-age', 'Age band', age_bands, '3-4', 'Skip for now') }}
+        {{ filter_field('profile-setting', 'Setting preference', settings, '', 'Either / skip') }}
+        <div class="profile-interests"><span>Interests <span class="muted">(optional)</span></span><div class="interest-options">{% for key,label in interests.items() %}<label><input type="checkbox" {% if key in ['art','nature'] %}checked{% endif %}>{{ label }}</label>{% endfor %}</div></div>
+      </fieldset>
+      <p class="muted">Example preferences only. Setup and saving require an authorized profile service. No personal information is collected or saved in this preview.</p>
+    </section>
+    <section id="recommendations"><div class="section-heading"><div><h2>A few ideas to begin</h2><p>Editorial development fixtures, not saved-profile recommendations.</p></div></div><div class="activity-grid">{% for a in activities %}{{ activity_card(a) }}{% endfor %}</div></section>
+  </div>
+</div>
+{% endblock %}

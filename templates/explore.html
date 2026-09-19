@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% from 'components.html' import discovery_form, results %}{% block title %}Explore ideas · Nurtured{% endblock %}
+{% block content %}<div class="page-intro"><span class="eyebrow">A LITTLE INSPIRATION FOR TODAY</span><h1>Let’s find your next little adventure.</h1><p>Play at home or head out together. Choose what works for your day.</p></div>{{ discovery_form(p,form_path,result_anchor,age_bands,kinds,interests,times,budgets,settings,category_labels) }}{{ results(activities,p,count,chips,recommendation,full,full_url,result_anchor) }}{% endblock %}

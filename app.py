@@ -14,6 +14,9 @@ from trusted_catalog import TRUSTED_PRODUCT_CATALOG
 
 app = Flask(__name__)
 
+from public_site import site
+app.register_blueprint(site)
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 AMAZON_ID = os.environ.get("AMAZON_ID", "steppingstone-20")
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -1941,7 +1944,8 @@ PAGE_TEMPLATE = """
 """
 
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["POST"])
+@app.route("/legacy/advisor", methods=["GET", "POST"])
 def index():
     raw_birth_date = request.form.get("birth_date") or default_birth_date_for_age().isoformat()
     birth_date = parse_birth_date(raw_birth_date)

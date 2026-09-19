@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% from 'components.html' import auth_form %}{% block title %}{{ 'Get Started' if signup else 'Login' }} · Nurtured{% endblock %}{% block content %}<div class="auth-page">{{ auth_form(signup,dashboard_denied|default(false)) }}</div>{% endblock %}
