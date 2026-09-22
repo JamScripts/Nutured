@@ -1,1 +1,26 @@
-{% extends 'base.html' %}{% from 'components.html' import auth_form %}{% block title %}{{ 'Get Started' if signup else 'Login' }} · Nurtured{% endblock %}{% block content %}<div class="auth-page">{{ auth_form(signup,dashboard_denied|default(false)) }}</div>{% endblock %}
+{% extends 'base.html' %}
+{% from 'components.html' import icon %}
+{% block title %}{{ 'Get Started' if signup else 'Login' }} · Nurtured{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <section class="auth-card" aria-labelledby="auth-title">
+    <span class="eyebrow">A LITTLE MORE NURTURED</span>
+    <h1 id="auth-title">{{ 'Your next chapter starts here.' if signup else 'Welcome back.' }}</h1>
+    {% if not configured %}
+      <div class="availability-notice" role="status">{{ icon('sprout') }}<div><strong>Accounts are coming soon</strong><p>Login and account creation aren’t available yet. You can explore every starter activity without an account.</p>{% if dashboard_denied|default(false) %}<p>The dashboard requires an account and is not available to public visitors.</p>{% endif %}</div></div>
+      <a class="button" href="/explore">Explore Activities {{ icon('arrow') }}</a>
+      <p class="muted">No account or personal details needed.</p>
+    {% else %}
+      {% if error %}<div class="form-message form-error" role="alert">{{ error }}</div>{% endif %}
+      {% if status_message %}<div class="form-message form-success" role="status">{{ status_message }}</div>{% endif %}
+      <form method="post" class="account-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="filter-field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required value="{{ email|default('') }}"></div>
+        <div class="filter-field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="{{ 'new-password' if signup else 'current-password' }}" minlength="10" maxlength="128" required></div>
+        <button class="button" type="submit">{{ 'Create account' if signup else 'Log in' }} {{ icon('arrow') }}</button>
+      </form>
+      <p class="auth-switch">{% if signup %}Already have an account? <a href="/login">Log in</a>{% else %}New to Nurtured? <a href="/get-started">Create an account</a>{% endif %}</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

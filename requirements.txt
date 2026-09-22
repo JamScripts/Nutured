@@ -1,3 +1,4 @@
 flask
 gunicorn
 openai
+requests>=2.32,<3

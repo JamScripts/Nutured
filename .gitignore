@@ -1,5 +1,8 @@
 .streamlit/secrets.toml
 .venv/
+.env
+.env.*
+!.env.example
 key.txt
 __pycache__/
 flask-preview*.log

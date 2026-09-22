@@ -1233,6 +1233,95 @@ section[id] {
   font-size:12px;
   margin:16px 0 8px
 }
+.account-form,.profile-form {
+  display:grid;
+  gap:18px;
+  margin-top:24px;
+  text-align:left
+}
+.account-form .filter-field input,.profile-form .filter-field input,.profile-form .filter-field select {
+  width:100%;
+  min-height:44px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fbfcf9
+}
+.account-form .button {
+  margin-top:4px
+}
+.auth-switch {
+  margin-top:22px;
+  font-size:14px
+}
+.form-message {
+  padding:13px 16px;
+  border-radius:10px;
+  margin:16px 0;
+  text-align:left;
+  font-size:14px
+}
+.form-error {
+  color:#6b2119;
+  background:#f9e4df;
+  border:1px solid #d7a49a
+}
+.form-success {
+  color:var(--forest);
+  background:var(--sage);
+  border:1px solid #afc1a5
+}
+.logout-form {
+  display:flex;
+  align-items:center
+}
+.logout-form .text-link {
+  border:0;
+  background:transparent;
+  padding:0 5px
+}
+.profile-page {
+  place-items:start center
+}
+.profile-card {
+  width:min(760px,100%);
+  max-width:760px
+}
+.profile-card>p {
+  max-width:570px;
+  margin-inline:auto
+}
+.profile-card .profile-fields {
+  text-align:left
+}
+.profile-actions,.profile-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px
+}
+.profile-summary {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  margin:20px 0 0
+}
+.profile-summary div {
+  padding:14px;
+  border-radius:10px;
+  background:var(--white)
+}
+.profile-summary dt {
+  color:var(--muted);
+  font-size:11px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.08em
+}
+.profile-summary dd {
+  margin:5px 0 0;
+  font-size:14px
+}
 .development-notice {
   padding:15px 25px;
   background:var(--yellow);
@@ -2019,6 +2108,15 @@ section[id] {
 .profile-fields :disabled {
   opacity:.75;
   cursor:not-allowed;
+}
+@media(max-width:600px) {
+  .profile-heading,.profile-actions {
+    align-items:stretch;
+    flex-direction:column
+  }
+  .profile-summary {
+    grid-template-columns:1fr
+  }
 }
 .no-js .site-nav {
   display:flex;

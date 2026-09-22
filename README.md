@@ -50,3 +50,11 @@ spelling differences documented in the audit. The public product name is Nurture
 
 See [handoff and limitations](docs/milestone-1-handoff.md),
 [repository audit](docs/milestone-1-audit.md), and [image credits](docs/image-credits.md).
+
+## Optional accounts and personalization
+
+The next logic layer adds Supabase email/password accounts, one child-preference
+profile per account, and deterministic dashboard recommendations. Public discovery
+still works without account configuration. Follow
+[the account setup guide](docs/account-setup.md) and run
+`migrations/001_child_profiles.sql` before enabling the three Railway variables.

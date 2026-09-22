@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import secrets
 from calendar import monthrange
 from datetime import date, datetime, timezone
 from urllib.parse import quote_plus, urlparse
@@ -13,6 +14,13 @@ from trusted_catalog import TRUSTED_PRODUCT_CATALOG
 
 
 app = Flask(__name__)
+app.config.update(
+    SECRET_KEY=os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RAILWAY_ENVIRONMENT")),
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 7,
+)
 
 from public_site import site
 app.register_blueprint(site)
