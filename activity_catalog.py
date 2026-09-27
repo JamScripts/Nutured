@@ -41,6 +41,87 @@ class FixtureCatalog:
     def activities(self):
         return ACTIVITIES
 
+ACTIVITY_COLUMNS = ",".join((
+    "id",
+    "slug",
+    "title",
+    "summary",
+    "image",
+    "image_alt",
+    "age_min_months",
+    "age_max_months",
+    "kind",
+    "tags",
+    "interests",
+    "duration",
+    "setting",
+    "cost",
+    "cost_basis",
+    "materials",
+    "steps",
+    "supervision",
+    "currency",
+    "review_status",
+))
+
+
+def activity_from_row(row):
+    """Convert one Supabase activity record into the public Activity contract."""
+    return Activity(
+        id=row["id"],
+        slug=row["slug"],
+        title=row["title"],
+        summary=row["summary"],
+        image=row["image"],
+        image_alt=row["image_alt"],
+        age_min_months=row["age_min_months"],
+        age_max_months=row["age_max_months"],
+        kind=row["kind"],
+        tags=tuple(row.get("tags") or ()),
+        interests=tuple(row.get("interests") or ()),
+        duration=row["duration"],
+        setting=row["setting"],
+        cost=row["cost"],
+        cost_basis=row["cost_basis"],
+        materials=tuple(row.get("materials") or ()),
+        steps=tuple(row.get("steps") or ()),
+        supervision=row["supervision"],
+        currency=row.get("currency") or "USD",
+        review_status=row.get("review_status") or "",
+    )
+
+
+class SupabaseCatalog:
+    """Read approved activities, falling back safely during migration."""
+
+    def __init__(self, gateway, fallback=None):
+        self.gateway = gateway
+        self.fallback = fallback or FixtureCatalog()
+
+    def activities(self):
+        try:
+            response = self.gateway.request(
+                "GET",
+                "/rest/v1/activities",
+                params={
+                    "select": ACTIVITY_COLUMNS,
+                    "status": "eq.approved",
+                    "order": "title.asc",
+                },
+            )
+
+            if response.status_code != 200:
+                return self.fallback.activities()
+
+            rows = response.json()
+            if not isinstance(rows, list):
+                return self.fallback.activities()
+
+            activities = tuple(activity_from_row(row) for row in rows)
+            return activities or self.fallback.activities()
+        except (KeyError, TypeError, ValueError):
+            return self.fallback.activities()
+
 KIT_PREVIEWS = (
     KitPreview("little-builders", "Little Builders", "An idea for open-ended stacking, sorting, and small worlds.", "hero", "Wooden blocks used in imaginative play"),
     KitPreview("color-discoverers", "Color Discoverers", "An idea for exploring color and making something all their own.", "paints", "An illustrative selection of colorful paints"),
